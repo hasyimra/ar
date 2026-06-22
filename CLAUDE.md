@@ -26,7 +26,7 @@ Identik dengan `sls`: role `sso_admin|admin|user|approval|viewer`, `/dev-login` 
 
 ## Deployment
 
-✅ App code, SSO registration (kode `AR`), dan nginx vhost (`ar.dkmapps.com`) semua sudah selesai di production — tapi **belum bisa diakses**, DNS record `ar.dkmapps.com` belum didaftarkan (lihat catatan terbaru di `sls/CLAUDE.md` bagian Deployment — DNS subdomain ternyata harus didaftarkan manual, bukan wildcard otomatis seperti yang dikira sebelumnya).
+✅ **Live di production**: `https://ar.dkmapps.com` — app code, SSO registration (kode `AR`), nginx vhost, dan DNS record semua sudah selesai dan terverifikasi (`302` redirect ke Portal SSO). Catatan: DNS subdomain `*.dkmapps.com` **bukan** wildcard otomatis — setiap app baru perlu DNS record ditambahkan manual (lihat `sls/CLAUDE.md` bagian Deployment).
 
 **Jangan jalankan `db:seed` di production** — `UserSeeder` isinya 5 user dev-login fiktif (email placeholder `admin@dkmapps.com` dst), cuma untuk testing lokal. Sempat salah dijalankan sekali di production saat deploy awal, langsung dihapus manual. Production cukup `migrate --force` saja.
 
