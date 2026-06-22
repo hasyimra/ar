@@ -24,6 +24,10 @@
 
 Identik dengan `sls`: role `sso_admin|admin|user|approval|viewer`, `/dev-login` untuk dev lokal (`AR_DEV_LOGIN_ENABLED`), tabel `ar_users`/`ar_sessions`/`ar_cache`/`ar_jobs` dst (prefix `ar_`, app punya users/framework table sendiri meski database `erp` dipakai bersama). `AutoNumberService` prefix: `INV` (invoice), `RCT` (payment/receipt), `CN` (credit note).
 
+## Dev Lokal
+
+SSO lokal sungguhan (bukan dev-login) — terdaftar di SSO lokal lewat `AddArApplicationSeeder.php` (sama file dipakai utk production, beda database target). `AR_DEV_LOGIN_ENABLED=false` di `.env` lokal — entry point selalu lewat Portal SSO (`localhost:8080/portal`), konsisten dengan pola `sls`. `/dev-login` masih ada di kode tapi tidak dipakai untuk app ini (sengaja, atas permintaan eksplisit user — "coba pelajari konsep aplikasi SSO dengan aplikasi lain misalnya sales").
+
 ## Deployment
 
 ✅ **Live di production**: `https://ar.dkmapps.com` — app code, SSO registration (kode `AR`), nginx vhost, dan DNS record semua sudah selesai dan terverifikasi (`302` redirect ke Portal SSO). Catatan: DNS subdomain `*.dkmapps.com` **bukan** wildcard otomatis — setiap app baru perlu DNS record ditambahkan manual (lihat `sls/CLAUDE.md` bagian Deployment).
