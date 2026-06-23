@@ -84,8 +84,23 @@
                 </a>
             </li>
             <li class="sidebar-list">
+                <a class="sidebar-link {{ request()->routeIs('reports.open-receivables') ? 'active' : '' }}" href="{{ route('reports.open-receivables') }}">
+                    <i data-feather="file"></i><span>Open Receivables</span>
+                </a>
+            </li>
+            <li class="sidebar-list">
                 <a class="sidebar-link {{ request()->routeIs('reports.aged-receivables') ? 'active' : '' }}" href="{{ route('reports.aged-receivables') }}">
                     <i data-feather="bar-chart-2"></i><span>Aged Receivables</span>
+                </a>
+            </li>
+            <li class="sidebar-list">
+                <a class="sidebar-link {{ request()->routeIs('reports.aged-receivables-summary') ? 'active' : '' }}" href="{{ route('reports.aged-receivables-summary') }}">
+                    <i data-feather="pie-chart"></i><span>Aged Receivables Summary</span>
+                </a>
+            </li>
+            <li class="sidebar-list">
+                <a class="sidebar-link {{ request()->routeIs('reports.ar-history') ? 'active' : '' }}" href="{{ route('reports.ar-history') }}">
+                    <i data-feather="clock"></i><span>AR History</span>
                 </a>
             </li>
         @endunless

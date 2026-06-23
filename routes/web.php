@@ -26,7 +26,10 @@ Route::middleware('auth')->group(function () {
     Route::put('users/{user}', [UserController::class, 'update'])->name('users.update')->middleware('role:sso_admin,admin');
 
     // --- Reports ---
+    Route::get('reports/open-receivables', [ReportController::class, 'openReceivables'])->name('reports.open-receivables');
     Route::get('reports/aged-receivables', [ReportController::class, 'agedReceivables'])->name('reports.aged-receivables');
+    Route::get('reports/aged-receivables-summary', [ReportController::class, 'agedReceivablesSummary'])->name('reports.aged-receivables-summary');
+    Route::get('reports/ar-history', [ReportController::class, 'arHistory'])->name('reports.ar-history');
 
     // --- AR Invoices: static routes registered before {invoice} (show) ---
     Route::get('ar-invoices', [ArInvoiceController::class, 'index'])->name('ar-invoices.index');
