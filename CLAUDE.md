@@ -1,14 +1,22 @@
 # ar — Aplikasi Accounts Receivable (Suite ERP DKM)
 
-> Aplikasi Laravel berdiri sendiri untuk modul **AR**: Invoice → Payment → (opsional) Credit Note, plus laporan Aged Receivables. App kedua dalam suite ERP baru PT. Dharma Karyatama Mulia (DKM), setelah `sls`. Lihat `C:\Project\Web\sls\CLAUDE.md` untuk konteks suite secara umum dan `C:\Project\Web\erp-schema\MODULES-ROADMAP.md` untuk rencana modul lain.
+> Aplikasi Laravel berdiri sendiri untuk modul **AR**: Invoice → Payment → (opsional) Credit Note, plus laporan AR (Open/Aged/Aged Summary/History Receivables). App kedua dalam suite ERP baru PT. Dharma Karyatama Mulia (DKM), setelah `sls`. Lihat `C:\Project\Web\sls\CLAUDE.md` untuk konteks suite secara umum dan `C:\Project\Web\erp-schema\MODULES-ROADMAP.md` untuk rencana modul lain.
 
 ## Cakupan
 
 - **Invoice bisa dibuat dua cara**: dari Sales Order `sls` yang sudah `selesai` (auto-tarik customer/ship-to/lines), **atau** manual berdiri sendiri (untuk billing jasa/lain-lain yang tidak lewat `sls`) — keputusan eksplisit user, bukan dibatasi cuma dari SO seperti BS1 aslinya yang sebenarnya juga mendukung keduanya.
-- **Payment** mengalokasikan satu pembayaran ke banyak invoice sekaligus, dengan opsi diskon (early payment) dan write-off per alokasi (write-off butuh pilih GL account, field saja — belum ada posting jurnal sungguhan, GL app belum dibangun).
+- **Payment** mengalokasikan satu pembayaran ke banyak invoice sekaligus, dengan opsi diskon (early payment) dan write-off per alokasi (write-off butuh pilih GL account).
 - **Credit Note** mengurangi sisa tagihan invoice (retur/pembatalan), tervalidasi tidak boleh melebihi sisa owing invoice asal.
-- **Tidak ada posting GL** — sama seperti `sls`, ditunda sampai app `gl` ada.
-- **Tidak ada bank reconciliation sungguhan** — cuma flag `reconciled` di `ar_payments`, bukan layar rekonsiliasi penuh (itu butuh `gl_journal_lines` yang belum operasional).
+- **Posting GL otomatis** (retrofit 2026-06-23, setelah app `gl` dibangun) — `approve()` Invoice dan Payment masing-masing posting jurnal balanced ke `gl_journals`/`gl_journal_lines` (model `GlJournal`/`GlJournalLine`/`GlSetting` di-duplikasi ke app ini, pola sama seperti `ap`/`prc`/`inv`). Lihat detail entry jurnal di `C:\Users\hasyi\.claude\plans\floating-inventing-rabbit.md` atau langsung baca `ArInvoiceController::postInvoiceJournal()`/`ArPaymentController::postPaymentJournal()`.
+- **Tidak ada bank reconciliation sungguhan** — cuma flag `reconciled` di `ar_payments`, bukan layar rekonsiliasi penuh.
+
+## Reports
+
+4 laporan mengikuti struktur wizard "AR Reports" BS1 (`ReportController.php`):
+- **Open Receivables** — flat list invoice belum lunas per customer, tanpa age bucket (No Invoice/Tanggal/Jatuh Tempo/Total/Dibayar/Owing).
+- **Aged Receivables** — detail per-invoice dengan age bucket (current/1-30/31-60/61-90/90+), grouped per customer dengan subtotal.
+- **Aged Receivables Summary** — rollup per customer saja (cuma total per bucket, tanpa baris invoice) — versi report "Aged Receivables" yang lama sebelum 2026-06-24 (sebelumnya dinamai "Aged Receivables" tanpa kata Summary, ternyata levelnya summary; sudah dipisah jadi report sendiri dan "Aged Receivables" di-upgrade ke detail sungguhan).
+- **AR History** — gabungan ArInvoice+ArPayment dalam rentang tanggal (filter `date_from`/`date_to`, default bulan ini), grouped per customer, urut by date.
 
 ## Computed Accessor, bukan Stored Column (penting!)
 
@@ -36,6 +44,6 @@ SSO lokal sungguhan (bukan dev-login) — terdaftar di SSO lokal lewat `AddArApp
 
 ## Status & Verifikasi
 
-✅ Alur penuh sudah dicoba lokal via curl: buat invoice dari SO `selesai` → submit → approve → catat payment (partial + write-off) → submit → approve → owing terupdate benar → buat credit note partial → submit → approve → owing berkurang lagi → cek di Aged Receivables report. Juga dicoba invoice manual standalone (tanpa SO) — `due_date` terhitung benar dari `invoice_date + term_days`. RBAC dicoba (viewer diblokir dari create, tetap bisa lihat index).
+✅ Alur penuh sudah dicoba (lokal + production) via curl/SSO sungguhan: buat invoice dari SO `selesai` → submit → approve (posting jurnal GL balanced) → catat payment (partial + write-off) → submit → approve (posting jurnal GL balanced) → owing terupdate benar → buat credit note partial → submit → approve → owing berkurang lagi → cek di semua 4 report AR. Juga dicoba invoice manual standalone (tanpa SO) — `due_date` terhitung benar dari `invoice_date + term_days`. RBAC dicoba (viewer diblokir dari create, tetap bisa lihat index). Login via SSO Portal sungguhan (bukan dev-login) sudah dicoba berkali-kali, lokal maupun production.
 
-⏳ Belum dicoba: alur lewat SSO Panel sungguhan (baru dev-login), tampilan visual di browser asli (baru HTTP/curl).
+⏳ Belum dicoba: tampilan visual penuh di browser asli untuk semua halaman (kebanyakan verifikasi lewat HTTP/curl + Playwright, bukan klik manual satu-satu).
