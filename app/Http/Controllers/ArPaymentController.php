@@ -7,6 +7,8 @@ use App\Models\ArPayment;
 use App\Models\Bank;
 use App\Models\Customer;
 use App\Models\GlAccount;
+use App\Models\GlJournal;
+use App\Models\GlSetting;
 use App\Services\AutoNumberService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -126,9 +128,81 @@ class ArPaymentController extends Controller
     {
         abort_if($payment->status !== 'diajukan', 403);
 
-        $payment->update(['status' => 'disetujui', 'approved_by' => Auth::id(), 'approved_at' => now()]);
+        DB::transaction(function () use ($payment) {
+            $payment->update(['status' => 'disetujui', 'approved_by' => Auth::id(), 'approved_at' => now()]);
+            $this->postPaymentJournal($payment);
+        });
 
         return back()->with('success', 'Pembayaran disetujui.');
+    }
+
+    /**
+     * Dr Bank (porsi tunai) + Dr Diskon AR (disc_taken) + Dr akun write-off pilihan user
+     * per alokasi = Cr AR Control (jumlah ketiganya — balance by construction, sama persis
+     * cara owing invoice berkurang).
+     */
+    private function postPaymentJournal(ArPayment $payment): void
+    {
+        $payment->load('allocations', 'bank');
+
+        $arControlId = GlSetting::where('key', 'ar_control')->first()?->gl_account_id;
+        if (! $arControlId) {
+            throw new \RuntimeException('GL Account untuk AR Control belum diatur di GL Settings.');
+        }
+
+        $lines = [];
+
+        $cashAmount = round((float) $payment->allocations->sum('amount'), 2);
+        if ($cashAmount > 0) {
+            $bankAccountId = $payment->bank?->gl_account_id;
+            if (! $bankAccountId) {
+                throw new \RuntimeException('Bank '.($payment->bank->name ?? '(tidak dipilih)').' belum punya GL Account, lengkapi dulu di master bank.');
+            }
+
+            $lines[] = ['gl_account_id' => $bankAccountId, 'debit' => $cashAmount, 'credit' => 0, 'description' => 'Pembayaran '.$payment->payment_no];
+        }
+
+        $discTotal = round((float) $payment->allocations->sum('disc_taken_amount'), 2);
+        if ($discTotal > 0) {
+            $discAccountId = GlSetting::where('key', 'ar_discount')->first()?->gl_account_id;
+            if (! $discAccountId) {
+                throw new \RuntimeException('GL Account untuk Diskon AR belum diatur di GL Settings.');
+            }
+
+            $lines[] = ['gl_account_id' => $discAccountId, 'debit' => $discTotal, 'credit' => 0, 'description' => 'Diskon pelunasan - '.$payment->payment_no];
+        }
+
+        foreach ($payment->allocations as $allocation) {
+            if ($allocation->write_off_amount <= 0) {
+                continue;
+            }
+
+            if (! $allocation->write_off_gl_account_id) {
+                throw new \RuntimeException('Alokasi write-off pada pembayaran '.$payment->payment_no.' belum punya GL Account.');
+            }
+
+            $lines[] = [
+                'gl_account_id' => $allocation->write_off_gl_account_id,
+                'debit' => round($allocation->write_off_amount, 2),
+                'credit' => 0,
+                'description' => 'Write-off invoice #'.$allocation->ar_invoice_id,
+            ];
+        }
+
+        $totalCredit = round(
+            $cashAmount + $discTotal + (float) $payment->allocations->sum('write_off_amount'),
+            2
+        );
+
+        $lines[] = ['gl_account_id' => $arControlId, 'debit' => 0, 'credit' => $totalCredit, 'description' => 'AR - '.$payment->payment_no];
+
+        GlJournal::postBalanced([
+            'journal_date' => $payment->payment_date,
+            'description' => 'AR Payment '.$payment->payment_no,
+            'source_type' => 'ar_payment',
+            'source_id' => $payment->id,
+            'created_by' => Auth::id(),
+        ], $lines);
     }
 
     public function reject(ArPayment $payment): RedirectResponse

@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\ArInvoice;
 use App\Models\ArInvoiceLine;
 use App\Models\Customer;
+use App\Models\GlJournal;
+use App\Models\GlSetting;
 use App\Models\InvStockBalance;
 use App\Models\InvStockMovement;
 use App\Models\Item;
@@ -203,9 +205,84 @@ class ArInvoiceController extends Controller
                     $this->moveStockOut($invoice, $line);
                 }
             }
+
+            $this->postInvoiceJournal($invoice);
         });
 
         return back()->with('success', 'Invoice disetujui dan stok telah diperbarui.');
+    }
+
+    /**
+     * Dr AR Control (total) = Cr Sales per line + Cr PPN Keluaran (flat rate, lihat
+     * recalculateTax()). Untuk line item inventory, tambahan Dr COGS / Cr Persediaan
+     * diambil dari movement yang baru dibuat moveStockOut() (unit_cost weighted-average
+     * SAAT itu, bukan dihitung ulang) supaya HPP yang diposting persis sama dengan stok
+     * yang benar-benar dikurangi.
+     */
+    private function postInvoiceJournal(ArInvoice $invoice): void
+    {
+        $invoice->load('lines.item.itemType');
+
+        $arControlId = GlSetting::where('key', 'ar_control')->first()?->gl_account_id;
+        if (! $arControlId) {
+            throw new \RuntimeException('GL Account untuk AR Control belum diatur di GL Settings.');
+        }
+
+        $lines = [];
+
+        foreach ($invoice->lines as $line) {
+            $salesAccountId = $line->item->sales_gl_account_id;
+            if (! $salesAccountId) {
+                throw new \RuntimeException("Item {$line->item->description} belum punya GL Account Penjualan, lengkapi dulu di master item.");
+            }
+
+            $lines[] = [
+                'gl_account_id' => $salesAccountId,
+                'debit' => 0,
+                'credit' => round($line->amount, 2),
+                'description' => $line->display_description,
+            ];
+
+            if ($invoice->warehouse_id && $line->item->itemType?->is_inventory) {
+                $movement = InvStockMovement::where('source_type', 'ar_invoice')
+                    ->where('source_id', $invoice->id)
+                    ->where('item_id', $line->item_id)
+                    ->latest('id')
+                    ->first();
+
+                if ($movement) {
+                    $cogsAccountId = $line->item->cogs_gl_account_id;
+                    $inventoryAccountId = $line->item->inventory_gl_account_id;
+                    if (! $cogsAccountId || ! $inventoryAccountId) {
+                        throw new \RuntimeException("Item {$line->item->description} belum punya GL Account COGS/Persediaan, lengkapi dulu di master item.");
+                    }
+
+                    $cogsAmount = round(abs($movement->qty) * $movement->unit_cost, 2);
+
+                    $lines[] = ['gl_account_id' => $cogsAccountId, 'debit' => $cogsAmount, 'credit' => 0, 'description' => 'HPP - '.$line->display_description];
+                    $lines[] = ['gl_account_id' => $inventoryAccountId, 'debit' => 0, 'credit' => $cogsAmount, 'description' => 'Persediaan - '.$line->display_description];
+                }
+            }
+        }
+
+        if ($invoice->ppn_amount > 0) {
+            $ppnAccountId = GlSetting::where('key', 'ppn_keluaran')->first()?->gl_account_id;
+            if (! $ppnAccountId) {
+                throw new \RuntimeException('GL Account untuk PPN Keluaran belum diatur di GL Settings.');
+            }
+
+            $lines[] = ['gl_account_id' => $ppnAccountId, 'debit' => 0, 'credit' => round($invoice->ppn_amount, 2), 'description' => 'PPN Keluaran'];
+        }
+
+        $lines[] = ['gl_account_id' => $arControlId, 'debit' => round($invoice->total, 2), 'credit' => 0, 'description' => 'AR - '.$invoice->invoice_no];
+
+        GlJournal::postBalanced([
+            'journal_date' => $invoice->invoice_date,
+            'description' => 'AR Invoice '.$invoice->invoice_no,
+            'source_type' => 'ar_invoice',
+            'source_id' => $invoice->id,
+            'created_by' => Auth::id(),
+        ], $lines);
     }
 
     /**
