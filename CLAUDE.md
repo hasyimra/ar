@@ -12,11 +12,13 @@
 
 ## Reports
 
-4 laporan mengikuti struktur wizard "AR Reports" BS1 (`ReportController.php`):
+6 laporan di `ReportController.php`, 4 pertama mengikuti struktur wizard "AR Reports" BS1, 2 terakhir (2026-06-24) mengikuti wizard "Sales Reports" BS1:
 - **Open Receivables** — flat list invoice belum lunas per customer, tanpa age bucket (No Invoice/Tanggal/Jatuh Tempo/Total/Dibayar/Owing).
 - **Aged Receivables** — detail per-invoice dengan age bucket (current/1-30/31-60/61-90/90+), grouped per customer dengan subtotal.
 - **Aged Receivables Summary** — rollup per customer saja (cuma total per bucket, tanpa baris invoice) — versi report "Aged Receivables" yang lama sebelum 2026-06-24 (sebelumnya dinamai "Aged Receivables" tanpa kata Summary, ternyata levelnya summary; sudah dipisah jadi report sendiri dan "Aged Receivables" di-upgrade ke detail sungguhan).
 - **AR History** — gabungan ArInvoice+ArPayment dalam rentang tanggal (filter `date_from`/`date_to`, default bulan ini), grouped per customer, urut by date.
+- **Sales Analysis** (`salesAnalysis()`) — konsolidasi 8 varian "Sales by ..." BS1 (Type, Type/Item, Type/Item/Customer, Customer, Customer/Type/Item, Salesman, Customer Type, Customer Type/Customer) jadi **satu** report dengan selector `group_by`, bukan 8 method/view terpisah seperti BS1 — keputusan eksplisit user untuk menyederhanakan. Sumber data `ar_invoice_lines` dari invoice `disetujui`/`selesai`, grouping rekursif (helper `groupSalesRows()`) sampai 3 level dalam, dirender lewat partial rekursif `reports/partials/sales-analysis-group.blade.php`. Butuh model baru `CustomerType`/`Salesman` (tabel `customer_types`/`salesmen`, sebelumnya tidak ada model di app ini) + relasi `Customer::customerType()`/`salesman()` baru.
+- **Sales Invoice Register** (`salesInvoiceRegister()`) — flat list invoice posted per rentang tanggal, report ke-9 dari wizard BS1 yang sama (satu-satunya yang tidak digabung ke Sales Analysis karena tidak punya dimensi group-by).
 
 ## Computed Accessor, bukan Stored Column (penting!)
 
